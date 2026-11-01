@@ -1,7 +1,9 @@
 """Opt-in live test against the real Lyfta API.
 
-    LYFTA_API_KEY=... uv run python scripts/smoke_live.py            # read checks only
-    LYFTA_API_KEY=... uv run python scripts/smoke_live.py --write    # also creates test data
+    uv run python scripts/smoke_live.py            # read checks only
+    uv run python scripts/smoke_live.py --write    # also creates test data
+
+The key is read from LYFTA_API_KEY, or from a .env file in the repository root.
 
 --write creates one program titled "lyfta-mcp smoke test <timestamp>" containing one template.
 The API cannot delete, so remove it in the Lyfta app afterwards.
@@ -19,7 +21,7 @@ from typing import Any
 
 from lyfta_mcp import auth
 from lyfta_mcp.client import LyftaClient
-from lyfta_mcp.config import load_settings
+from lyfta_mcp.config import load_dotenv, load_settings
 from lyfta_mcp.server import create_server
 
 
@@ -36,9 +38,10 @@ def ok(label: str, detail: str = "") -> None:
 
 
 async def main(write: bool) -> int:
+    load_dotenv()
     key = os.environ.get("LYFTA_API_KEY", "").strip()
     if not key:
-        print("Set LYFTA_API_KEY first.", file=sys.stderr)
+        print("Set LYFTA_API_KEY in .env (see .env.example) or the environment.", file=sys.stderr)
         return 2
     auth.configure_stdio(key)
     settings = load_settings()

@@ -9,7 +9,7 @@ import sys
 
 from .auth import BearerKeyMiddleware, configure_stdio
 from .client import LyftaClient
-from .config import Settings, load_settings
+from .config import Settings, load_dotenv, load_settings
 from .server import create_server
 
 
@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     args = parser.parse_args(argv)
 
+    load_dotenv()
     settings = load_settings()
     # stdout carries the stdio protocol, so all logging goes to stderr.
     logging.basicConfig(
@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> None:
         if not key:
             print(
                 "lyfta-mcp: LYFTA_API_KEY is not set. Generate a key at "
-                "https://my.lyfta.app/community/api and pass it in the environment.",
+                "https://my.lyfta.app/community/api and put it in .env or the environment.",
                 file=sys.stderr,
             )
             sys.exit(2)

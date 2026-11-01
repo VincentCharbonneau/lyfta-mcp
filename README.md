@@ -49,9 +49,17 @@ Requires [uv](https://docs.astral.sh/uv/).
 git clone https://github.com/VincentCharbonneau/lyfta-mcp && cd lyfta-mcp && uv sync
 ```
 
+Put your key in a `.env` file at the root of the clone. Git ignores `.env`, so the key is never committed or pushed (`.env.example` is the committed template; leave it empty):
+
 ```bash
-claude mcp add --transport stdio --scope user --env LYFTA_API_KEY=<key> lyfta -- uv run --directory /abs/path/lyfta-mcp lyfta-mcp
+cp .env.example .env   # then set LYFTA_API_KEY=<key> in .env
 ```
+
+```bash
+claude mcp add --transport stdio --scope user lyfta -- uv run --directory /abs/path/lyfta-mcp lyfta-mcp
+```
+
+The server reads `.env` from the clone's root on startup (or from the path in `LYFTA_ENV_FILE`). A `LYFTA_API_KEY` set in the environment, e.g. with `claude mcp add --env LYFTA_API_KEY=<key> ...`, takes precedence.
 
 Or, without cloning:
 
@@ -77,7 +85,7 @@ Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config
 }
 ```
 
-If you cloned the repo, use `"command": "uv"` and `"args": ["run", "--directory", "/abs/path/lyfta-mcp", "lyfta-mcp"]` instead.
+If you cloned the repo, use `"command": "uv"` and `"args": ["run", "--directory", "/abs/path/lyfta-mcp", "lyfta-mcp"]` instead, and you can drop `env` if your key is in the clone's `.env`.
 
 ## Connecting to a hosted server
 
@@ -140,7 +148,7 @@ uv run pytest
 uv run ruff check && uv run ruff format --check && uv run mypy
 ```
 
-`scripts/smoke_live.py` runs read-only checks against the real API (`LYFTA_API_KEY` required). `--write` also creates a program titled `lyfta-mcp smoke test <timestamp>`, which you then need to delete in the app.
+`scripts/smoke_live.py` runs read-only checks against the real API (key from `.env` or `LYFTA_API_KEY`). `--write` also creates a program titled `lyfta-mcp smoke test <timestamp>`, which you then need to delete in the app.
 
 ## License
 
