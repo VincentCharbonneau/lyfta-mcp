@@ -8,13 +8,16 @@ import os
 import sys
 
 from .auth import BearerKeyMiddleware, configure_stdio
+from .client import LyftaClient
 from .config import Settings, load_settings
 from .server import create_server
 
 
-def build_http_app(settings: Settings, host: str = "0.0.0.0") -> BearerKeyMiddleware:
+def build_http_app(
+    settings: Settings, host: str = "0.0.0.0", client: LyftaClient | None = None
+) -> BearerKeyMiddleware:
     """Streamable HTTP app at /mcp (stateless, multi-user) plus GET /health."""
-    mcp = create_server(settings)
+    mcp = create_server(settings, client)
     app = mcp.streamable_http_app(stateless_http=True, json_response=True, host=host)
     return BearerKeyMiddleware(app, allowlist_sha256=settings.allowlist_sha256)
 

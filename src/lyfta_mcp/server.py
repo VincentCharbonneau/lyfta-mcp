@@ -605,7 +605,7 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
             try:
                 program = await client.collection(key, program_id)
             except LyftaError as exc:
-                if exc.status in (400, 404):
+                if exc.status in (400, 404) or "not found" in exc.message.lower():
                     raise ToolError(f"Program {program_id} not found. Use list_programs.") from exc
                 raise
             if not program:
