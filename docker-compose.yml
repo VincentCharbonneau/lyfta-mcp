@@ -1,0 +1,13 @@
+services:
+  lyfta-mcp:
+    build: .
+    image: lyfta-mcp:local
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Optional: comma-separated SHA-256 hex digests of the Lyfta API keys this server accepts.
+      # Leave empty to accept any key. Compute one with:
+      #   python -c "import hashlib; print(hashlib.sha256(b'YOUR_KEY').hexdigest())"
+      SERVER_ALLOWLIST_KEYS_SHA256: ${SERVER_ALLOWLIST_KEYS_SHA256:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
