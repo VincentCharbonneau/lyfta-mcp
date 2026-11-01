@@ -1,0 +1,61 @@
+[project]
+name = "lyfta-mcp"
+version = "0.1.0"
+description = "Unofficial MCP server for the Lyfta workout tracker — read your training history and build programs with Claude."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Vincent Charbonneau" }]
+keywords = ["mcp", "lyfta", "workout", "fitness", "claude"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "mcp>=1.10",
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "uvicorn>=0.30",
+    "starlette>=0.37",
+]
+
+[project.scripts]
+lyfta-mcp = "lyfta_mcp.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lyfta_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["lyfta_mcp"]
+
+[[tool.mypy.overrides]]
+module = ["respx.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
