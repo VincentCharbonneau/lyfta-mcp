@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import ssl
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 import httpx
+import truststore
 
 from .auth import hash_key
 from .config import Settings
@@ -113,6 +115,8 @@ class LyftaClient:
             base_url=settings.base_url,
             timeout=settings.timeout,
             transport=transport,
+            # OS trust store, so TLS-inspecting proxies and antivirus roots are honored.
+            verify=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
             headers={"Accept": "application/json", "User-Agent": "lyfta-mcp"},
         )
         self._sleep = sleep
