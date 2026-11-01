@@ -30,13 +30,13 @@ def workout_date(workout: dict[str, Any]) -> str:
     return str(workout.get("workout_perform_date") or "")[:10]
 
 
-def set_completed(s: dict[str, Any]) -> bool:
-    value = s.get("is_completed")
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes")
-    return bool(value)
+def set_performed(s: dict[str, Any]) -> bool:
+    """Whether a set in a logged workout was actually done.
+
+    `is_completed` is unreliable (the API reports false for sets in finished workouts unless
+    they were ticked in the app), so a set counts when it records reps, time or distance.
+    """
+    return any((to_float(s.get(k)) or 0) > 0 for k in ("reps", "duration", "distance"))
 
 
 def _r(value: float, digits: int = 1) -> float | int:
@@ -64,7 +64,7 @@ def training_summary(
         for ex in workout.get("exercises") or []:
             name = str(ex.get("excercise_name") or ex.get("exercise_name") or "Unknown")
             meta = _meta(meta_by_id, ex.get("exercise_id"))
-            completed = [s for s in ex.get("sets") or [] if set_completed(s)]
+            completed = [s for s in ex.get("sets") or [] if set_performed(s)]
             if not completed:
                 continue
             exercise_sessions[name] += 1

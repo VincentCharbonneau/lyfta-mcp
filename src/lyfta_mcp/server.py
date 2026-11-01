@@ -67,8 +67,6 @@ def compact_set(s: dict[str, Any]) -> dict[str, Any]:
     set_type = s.get("set_type_id")
     if set_type not in (None, "", 0, "0"):
         out["set_type_id"] = set_type
-    if s.get("is_completed") in (False, "0", 0, "false"):
-        out["completed"] = False
     if s.get("record_type"):
         out.update({k: s.get(k) for k in RECORD_FIELDS})
     return out
@@ -448,7 +446,7 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         start_date: Annotated[date, Field(description="Inclusive UTC start date (YYYY-MM-DD).")],
         end_date: Annotated[date, Field(description="Inclusive UTC end date (YYYY-MM-DD).")],
     ) -> str:
-        """Training overview for a date range: session count, total volume, completed sets per
+        """Training overview for a date range: session count, total volume, sets per
         body part and per target muscle, sessions and top set (by e1RM) per exercise, and PRs
         recorded in the range. Reads up to 500 workouts."""
         if end_date < start_date:

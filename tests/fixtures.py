@@ -80,7 +80,7 @@ def workout(
 
 
 def performed_set(
-    weight: float, reps: int, *, completed: bool = True, record: str | None = None
+    weight: float, reps: int | str, *, completed: bool = False, record: str | None = None
 ) -> dict[str, Any]:
     return {
         "id": "abc",

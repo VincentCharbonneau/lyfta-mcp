@@ -32,7 +32,7 @@ def test_training_summary() -> None:
                     [
                         performed_set(100, 5),
                         performed_set(120, 3, record="weight"),
-                        performed_set(130, 1, completed=False),
+                        performed_set(130, ""),  # planned but never done
                     ],
                 ),
                 workout_exercise(BENCH, [performed_set(80, 8)]),
@@ -51,7 +51,8 @@ def test_training_summary() -> None:
     assert s["training_days"] == 2
     # Workout 1 uses its reported volume, workout 2 is computed (110 * 5).
     assert s["total_volume"] == 1500 + 550
-    # Squat: 2 completed sets + 1 completed set; the incomplete 130 kg single is ignored.
+    # Squat: 2 + 1 performed sets; the 130 kg set with no reps logged is ignored, while
+    # is_completed=False (what the real API returns for finished workouts) is not.
     assert s["sets_per_body_part"] == {"Quadriceps": 3, "Thighs": 3, "Chest": 1}
     assert s["sets_per_target_muscle"]["Quadriceps"] == 3
     assert s["sets_per_target_muscle"]["Pectoralis Major Sternal Head"] == 1
