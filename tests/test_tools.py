@@ -33,9 +33,7 @@ def base_routes(lyfta: respx.MockRouter) -> respx.MockRouter:
     return lyfta
 
 
-async def test_get_workouts_is_compact(
-    server: MCPServer, base_routes: respx.MockRouter, api_key: str
-) -> None:
+async def test_get_workouts_is_compact(server: MCPServer, base_routes: respx.MockRouter) -> None:
     base_routes.get("/workouts").respond(
         json=workouts_response(
             [workout(1, "2026-09-01", [workout_exercise(SQUAT, [performed_set(100, 5)])])]
@@ -52,9 +50,7 @@ async def test_get_workouts_is_compact(
     assert base_routes.routes[-1].calls.last.request.url.params["from"] == "2026-09-01"
 
 
-async def test_training_summary_paginates(
-    server: MCPServer, base_routes: respx.MockRouter, api_key: str
-) -> None:
+async def test_training_summary_paginates(server: MCPServer, base_routes: respx.MockRouter) -> None:
     def page(request: httpx.Request) -> httpx.Response:
         n = int(request.url.params["page"])
         w = workout(n, f"2026-09-0{n}", [workout_exercise(BENCH, [performed_set(80, 8)])])
@@ -72,7 +68,7 @@ async def test_training_summary_paginates(
 
 
 async def test_training_summary_truncates_at_cap(
-    server: MCPServer, base_routes: respx.MockRouter, api_key: str
+    server: MCPServer, base_routes: respx.MockRouter
 ) -> None:
     hundred = [workout(i, "2026-09-01", []) for i in range(100)]
     route = base_routes.get("/workouts").respond(json=workouts_response(hundred, total_pages=10))
@@ -84,7 +80,7 @@ async def test_training_summary_truncates_at_cap(
     assert "500" in out["truncated"]
 
 
-async def test_lift_trends(server: MCPServer, lyfta: respx.MockRouter, api_key: str) -> None:
+async def test_lift_trends(server: MCPServer, lyfta: respx.MockRouter) -> None:
     lyfta.get("/exercises").respond(json=performed_response())
     lyfta.get("/exercises/library").respond(json=library_response([]))
     lyfta.get("/exercises/progress").respond(
@@ -104,16 +100,14 @@ async def test_lift_trends(server: MCPServer, lyfta: respx.MockRouter, api_key: 
     assert nope == {"exercise": "Nope", "status": "not_found"}
 
 
-async def test_lyfta_errors_become_tool_errors(
-    server: MCPServer, lyfta: respx.MockRouter, api_key: str
-) -> None:
+async def test_lyfta_errors_become_tool_errors(server: MCPServer, lyfta: respx.MockRouter) -> None:
     lyfta.get("/collections").respond(401, json={"status": False, "message": "Invalid API key"})
     with pytest.raises(ToolError, match="Invalid API key"):
         await server.call_tool("list_programs", {})
 
 
 async def test_create_program_preview_then_confirm(
-    server: MCPServer, lyfta: respx.MockRouter, api_key: str
+    server: MCPServer, lyfta: respx.MockRouter
 ) -> None:
     lyfta.get("/collections").respond(
         json=collections_response([{"id": 3, "title": "Strength Block", "workout_count": 2}])
@@ -160,7 +154,7 @@ def workout_routes(base_routes: respx.MockRouter) -> respx.MockRouter:
 
 
 async def test_create_workout_preview_writes_nothing(
-    server: MCPServer, workout_routes: respx.MockRouter, api_key: str
+    server: MCPServer, workout_routes: respx.MockRouter
 ) -> None:
     post = workout_routes.post("/templates").respond(json={"status": True, "data": {"id": 1}})
     out = await call(server, "create_workout", SQUAT_DAY)
@@ -180,7 +174,7 @@ async def test_create_workout_preview_writes_nothing(
 
 
 async def test_create_workout_confirm_posts_and_refetches(
-    server: MCPServer, workout_routes: respx.MockRouter, api_key: str
+    server: MCPServer, workout_routes: respx.MockRouter
 ) -> None:
     post = workout_routes.post("/templates").respond(
         json={"status": True, "data": {"id": 9812, "title": "Squat Day", "exercises": []}}
@@ -225,7 +219,7 @@ async def test_create_workout_confirm_posts_and_refetches(
 
 
 async def test_create_workout_unresolved_writes_nothing(
-    server: MCPServer, base_routes: respx.MockRouter, api_key: str
+    server: MCPServer, base_routes: respx.MockRouter
 ) -> None:
     base_routes.get("/collections/10").respond(json=collection_detail(10, "Lower", []))
     base_routes.get("/exercises/library").respond(
@@ -249,7 +243,7 @@ async def test_create_workout_unresolved_writes_nothing(
 
 
 async def test_create_workout_duplicate_title_guard(
-    server: MCPServer, workout_routes: respx.MockRouter, api_key: str
+    server: MCPServer, workout_routes: respx.MockRouter
 ) -> None:
     post = workout_routes.post("/templates").respond(json={"status": True, "data": {"id": 2}})
     workout_routes.get("/templates/2").respond(json={"status": True, "data": {"id": 2}})
@@ -265,7 +259,7 @@ async def test_create_workout_duplicate_title_guard(
 
 
 async def test_create_workout_unknown_program(
-    server: MCPServer, base_routes: respx.MockRouter, api_key: str
+    server: MCPServer, base_routes: respx.MockRouter
 ) -> None:
     base_routes.get("/collections/404").respond(
         200, json={"status": False, "message": "Collection not found"}

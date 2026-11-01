@@ -1,10 +1,20 @@
 # lyfta-mcp
 
-An [MCP](https://modelcontextprotocol.io) server for the [Lyfta](https://lyfta.app) workout tracker. Claude (or any MCP client) can read your training history, analyze your progress, and create programs and workouts with target sets, reps, weights and RIR directly in your Lyfta account.
+A self-hosted [MCP](https://modelcontextprotocol.io) server for the [Lyfta](https://lyfta.app) workout tracker. Run it on your own machine or server, connect Claude (or any MCP client), and it can read your training history, analyze your progress, and create programs and workouts with target sets, reps, weights and RIR directly in your Lyfta account.
 
 > **Unofficial.** This project is not affiliated with, endorsed by, or supported by Lyfta or Lindberg Development AS. It uses the public [Lyfta API](https://my.lyfta.app/community/api) with your own API key.
 
-Lyfta also offers its own read-only MCP connector. This one adds program and workout creation, training analytics, and self-hosting.
+Lyfta also offers its own read-only MCP connector. This one adds program and workout creation and training analytics, and runs on infrastructure you control.
+
+## How it works
+
+```
+Claude ──HTTPS + access token──▶ your reverse proxy ──▶ lyfta-mcp ──Lyfta API key──▶ my.lyfta.app
+```
+
+- The server holds **one Lyfta API key** (yours) in its `.env`. It never leaves the server.
+- Clients authenticate with a separate **access token** (`MCP_AUTH_TOKEN`). Anyone without it gets `401`.
+- If the token leaks, change it in `.env` and restart; your Lyfta key stays the same.
 
 ## Capabilities
 
@@ -33,88 +43,53 @@ These come from the Lyfta API itself:
 - **No logging of completed workouts.** Weights you give are *targets* in templates, not performed sets.
 - **Normal sets only.** The API documents set type `0` (normal); warmup and other set types are not supported yet.
 - Exercises you have never performed and whose library entry has no `exercise_type` cannot be added to a template (the API requires an exact catalog match). Log the exercise once in the app, or choose one you have done.
-- Rate limits: 60 requests/minute and 5,000/day per key. The server throttles itself to stay under the per-minute limit.
+- Rate limits: 60 requests/minute and 5,000/day. The server throttles itself to stay under the per-minute limit.
 
-## Get a Lyfta API key
+## Setup
 
-1. Go to [my.lyfta.app/community/api](https://my.lyfta.app/community/api).
-2. Click **Generate API Key** and copy it right away. It is shown only once.
-3. Generating a new key revokes the previous one.
+### 1. Get a Lyfta API key
 
-## Local use with Claude Code
+Go to [my.lyfta.app/community/api](https://my.lyfta.app/community/api), click **Generate API Key**, and copy it right away (it is shown only once; generating a new one revokes the old one).
 
-Requires [uv](https://docs.astral.sh/uv/).
+### 2. Configure `.env`
 
 ```bash
-git clone https://github.com/VincentCharbonneau/lyfta-mcp && cd lyfta-mcp && uv sync
+git clone https://github.com/VincentCharbonneau/lyfta-mcp && cd lyfta-mcp
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # your access token
 ```
 
-Put your key in a `.env` file at the root of the clone. Git ignores `.env`, so the key is never committed or pushed (`.env.example` is the committed template; leave it empty):
+Edit `.env`:
 
-```bash
-cp .env.example .env   # then set LYFTA_API_KEY=<key> in .env
+```
+LYFTA_API_KEY=<your Lyfta key>
+MCP_AUTH_TOKEN=<the token you just generated>
 ```
 
-```bash
-claude mcp add --transport stdio --scope user lyfta -- uv run --directory /abs/path/lyfta-mcp lyfta-mcp
-```
+`.env` is ignored by git and Docker builds, so neither secret is ever committed or baked into an image. `.env.example` is the committed template; keep it empty. The server refuses to start if either value is missing or the token is shorter than 24 characters.
 
-The server reads `.env` from the clone's root on startup (or from the path in `LYFTA_ENV_FILE`). A `LYFTA_API_KEY` set in the environment, e.g. with `claude mcp add --env LYFTA_API_KEY=<key> ...`, takes precedence.
+### 3. Run it
 
-Or, without cloning:
-
-```bash
-claude mcp add --transport stdio --scope user --env LYFTA_API_KEY=<key> lyfta -- uvx --from git+https://github.com/VincentCharbonneau/lyfta-mcp lyfta-mcp
-```
-
-Run `/mcp` in Claude Code to check that `lyfta` is connected.
-
-## Claude Desktop
-
-Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop:
-
-```json
-{
-  "mcpServers": {
-    "lyfta": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/VincentCharbonneau/lyfta-mcp", "lyfta-mcp"],
-      "env": { "LYFTA_API_KEY": "<key>" }
-    }
-  }
-}
-```
-
-If you cloned the repo, use `"command": "uv"` and `"args": ["run", "--directory", "/abs/path/lyfta-mcp", "lyfta-mcp"]` instead, and you can drop `env` if your key is in the clone's `.env`.
-
-## Connecting to a hosted server
-
-A hosted instance serves Streamable HTTP at `/mcp`. Each user sends their own Lyfta key:
-
-```bash
-claude mcp add --transport http lyfta https://<host>/mcp --header "Authorization: Bearer <your Lyfta key>"
-```
-
-On claude.ai, custom connectors can use this where the request headers option is available. OAuth sign-in for claude.ai is planned.
-
-## Self-hosting with Docker
+With Docker:
 
 ```bash
 docker compose up -d
 curl http://localhost:8000/health   # {"status":"ok"}
 ```
 
-No Lyfta key is configured on the server. Every request carries the caller's key in `Authorization: Bearer <key>`, so one deployment can serve several people.
+Or directly with [uv](https://docs.astral.sh/uv/):
 
-| Variable | Purpose |
-|---|---|
-| `SERVER_ALLOWLIST_KEYS_SHA256` | Optional. Comma-separated SHA-256 hex digests of the keys the server accepts (restrict it to yourself). Compute one with `python -c "import hashlib; print(hashlib.sha256(b'YOUR_KEY').hexdigest())"`. |
-| `LOG_LEVEL` | `INFO` by default. |
-| `PORT` | Port when not using the Docker default of 8000. |
+```bash
+uv sync
+uv run lyfta-mcp                          # http://127.0.0.1:8000
+uv run lyfta-mcp --host 0.0.0.0 --port 8000
+```
 
-Images are published to `ghcr.io/vincentcharbonneau/lyfta-mcp` for each release tag.
+The MCP endpoint is `/mcp` (Streamable HTTP). `GET /health` needs no token.
 
-**Always put the server behind HTTPS**, since requests carry API keys. With [Caddy](https://caddyserver.com):
+### 4. Put it behind HTTPS
+
+Requests carry your access token, so expose the server only over HTTPS. The compose file binds to `127.0.0.1:8000` so it is not reachable directly from the network. With [Caddy](https://caddyserver.com) on the same host:
 
 ```
 lyfta.example.com {
@@ -122,9 +97,36 @@ lyfta.example.com {
 }
 ```
 
-Any platform that terminates TLS works too (Fly.io, Railway, Render, a VPS with nginx).
+Any setup that terminates TLS works (nginx, Traefik, Cloudflare Tunnel, Tailscale Serve, Fly.io, Railway). For use on your own computer only, plain `http://localhost:8000/mcp` is fine.
 
-Without Docker: `uv run lyfta-mcp --transport http --host 0.0.0.0 --port 8000`.
+## Connect a client
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http --scope user lyfta https://lyfta.example.com/mcp --header "Authorization: Bearer <MCP_AUTH_TOKEN>"
+```
+
+Run `/mcp` in Claude Code to check that `lyfta` is connected.
+
+**Claude Desktop**, via [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) (requires Node.js). Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config) and restart:
+
+```json
+{
+  "mcpServers": {
+    "lyfta": {
+      "command": "npx",
+      "args": [
+        "mcp-remote", "https://lyfta.example.com/mcp",
+        "--header", "Authorization:${LYFTA_MCP_AUTH}"
+      ],
+      "env": { "LYFTA_MCP_AUTH": "Bearer <MCP_AUTH_TOKEN>" }
+    }
+  }
+}
+```
+
+**claude.ai**: custom connectors work where the request headers option is available. OAuth sign-in is planned.
 
 ## Example prompts
 
@@ -133,12 +135,23 @@ Without Docker: `uv run lyfta-mcp --transport http --host 0.0.0.0 --port 8000`.
 - "Build a 4-day upper/lower program from my current e1RMs. Show it to me before creating it."
 - "Add a 'Squat Day v2' to my Strength program: 5x5 at 80% of my squat e1RM, then 3x8-10 leg press."
 
+## Configuration
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `LYFTA_API_KEY` | yes | Your Lyfta API key. |
+| `MCP_AUTH_TOKEN` | yes | Access token clients send as `Authorization: Bearer <token>` (24+ characters). |
+| `LOG_LEVEL` | no | `INFO` by default. |
+| `HOST`, `PORT` | no | Bind address when running without Docker (default `127.0.0.1:8000`). |
+| `LYFTA_ENV_FILE` | no | Path to an env file other than `./.env` or the repository's `.env`. |
+
+Variables already set in the environment take precedence over `.env`. Docker images are published to `ghcr.io/vincentcharbonneau/lyfta-mcp` for each release tag; run them with `--env-file .env`.
+
 ## Privacy
 
-- The server is stateless: no database, nothing written to disk.
-- API keys are never stored or logged. In HTTP mode a key lives only in memory for the duration of the request that carried it.
-- Responses are cached in memory for a short time (60 s, or 10 min for the exercise catalog), separately for each key.
-- All data goes directly between the server and `my.lyfta.app`.
+- No database and nothing written to disk. Responses are cached in memory for a short time (60 s, or 10 min for the exercise catalog).
+- Neither the Lyfta key nor the access token is logged.
+- All data goes directly between your server and `my.lyfta.app`.
 
 ## Development
 
@@ -148,7 +161,7 @@ uv run pytest
 uv run ruff check && uv run ruff format --check && uv run mypy
 ```
 
-`scripts/smoke_live.py` runs read-only checks against the real API (key from `.env` or `LYFTA_API_KEY`). `--write` also creates a program titled `lyfta-mcp smoke test <timestamp>`, which you then need to delete in the app.
+`scripts/smoke_live.py` runs read-only checks against the real API using the key in `.env` (the server does not need to be running). `--write` also creates a program titled `lyfta-mcp smoke test <timestamp>`, which you then need to delete in the app.
 
 ## License
 

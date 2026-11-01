@@ -3,7 +3,8 @@
     uv run python scripts/smoke_live.py            # read checks only
     uv run python scripts/smoke_live.py --write    # also creates test data
 
-The key is read from LYFTA_API_KEY, or from a .env file in the repository root.
+The key is read from LYFTA_API_KEY, or from the .env file in the repository root. Tools are
+called in-process, so the server does not need to be running and MCP_AUTH_TOKEN is not used.
 
 --write creates one program titled "lyfta-mcp smoke test <timestamp>" containing one template.
 The API cannot delete, so remove it in the Lyfta app afterwards.
@@ -14,14 +15,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from lyfta_mcp import auth
 from lyfta_mcp.client import LyftaClient
-from lyfta_mcp.config import load_dotenv, load_settings
+from lyfta_mcp.config import DEFAULT_BASE_URL, Settings, load_dotenv
 from lyfta_mcp.server import create_server
 
 
@@ -34,17 +35,21 @@ async def run_tool(server: Any, name: str, args: dict[str, Any] | None = None) -
 
 
 def ok(label: str, detail: str = "") -> None:
-    print(f"  ok  {label}{f' — {detail}' if detail else ''}")
+    print(f"  ok  {label}{f' - {detail}' if detail else ''}")
 
 
 async def main(write: bool) -> int:
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     load_dotenv()
     key = os.environ.get("LYFTA_API_KEY", "").strip()
     if not key:
         print("Set LYFTA_API_KEY in .env (see .env.example) or the environment.", file=sys.stderr)
         return 2
-    auth.configure_stdio(key)
-    settings = load_settings()
+    settings = Settings(
+        api_key=key,
+        auth_token="",  # unused: no HTTP layer in-process
+        base_url=os.environ.get("LYFTA_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
+    )
     client = LyftaClient(settings)
     server = create_server(settings, client)
     today = date.today()
@@ -77,8 +82,9 @@ async def main(write: bool) -> int:
 
         programs = await run_tool(server, "list_programs")
         ok("list_programs", f"{programs['count']} programs")
-        if programs["programs"]:
-            pid = programs["programs"][0]["id"]
+        with_workouts = [p for p in programs["programs"] if p.get("workout_count")]
+        if with_workouts:
+            pid = with_workouts[0]["id"]
             program = await run_tool(server, "get_program", {"program_id": pid, "full": True})
             ok(
                 "get_program",

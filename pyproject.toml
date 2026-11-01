@@ -1,7 +1,7 @@
 [project]
 name = "lyfta-mcp"
 version = "0.1.0"
-description = "Unofficial MCP server for the Lyfta workout tracker — read your training history and build programs with Claude."
+description = "Unofficial self-hosted MCP server for the Lyfta workout tracker — read your training history and build programs with Claude."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

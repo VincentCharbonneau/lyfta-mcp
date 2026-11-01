@@ -1,14 +1,28 @@
-"""Settings read from the environment (and an optional local .env file)."""
+"""Settings read from the environment (and an optional .env file)."""
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_BASE_URL = "https://my.lyfta.app"
 # Repository root when running from a clone (src/lyfta_mcp/config.py -> repo).
 REPO_ROOT = Path(__file__).resolve().parents[2]
+MIN_TOKEN_LENGTH = 24
+
+
+class ConfigError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class Settings:
+    api_key: str
+    auth_token: str
+    base_url: str = DEFAULT_BASE_URL
+    timeout: float = 20.0
+    log_level: str = "INFO"
 
 
 def parse_dotenv(text: str) -> dict[str, str]:
@@ -32,8 +46,8 @@ def parse_dotenv(text: str) -> dict[str, str]:
 def load_dotenv(paths: list[Path] | None = None) -> Path | None:
     """Load the first existing .env into os.environ without overriding variables already set.
 
-    Looked up in order: $LYFTA_ENV_FILE, ./.env, then the repository root's .env (so a clone
-    works however the MCP client launches it). Empty values are ignored.
+    Looked up in order: $LYFTA_ENV_FILE, ./.env, then the repository root's .env. Empty values
+    are ignored. Under Docker Compose the variables come from `env_file` instead.
     """
     if paths is None:
         paths = [Path.cwd() / ".env", REPO_ROOT / ".env"]
@@ -48,22 +62,26 @@ def load_dotenv(paths: list[Path] | None = None) -> Path | None:
     return None
 
 
-@dataclass(frozen=True)
-class Settings:
-    base_url: str = DEFAULT_BASE_URL
-    timeout: float = 20.0
-    log_level: str = "INFO"
-    # SHA-256 hex digests of the Lyfta keys an HTTP deployment accepts. Empty = accept any key.
-    allowlist_sha256: frozenset[str] = field(default_factory=frozenset)
-
-
 def load_settings() -> Settings:
-    raw_allowlist = os.environ.get("SERVER_ALLOWLIST_KEYS_SHA256", "")
-    allowlist = frozenset(
-        item.strip().lower() for item in raw_allowlist.replace(";", ",").split(",") if item.strip()
-    )
+    api_key = os.environ.get("LYFTA_API_KEY", "").strip()
+    auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+    problems = []
+    if not api_key:
+        problems.append(
+            "LYFTA_API_KEY is not set. Generate one at https://my.lyfta.app/community/api."
+        )
+    if not auth_token:
+        problems.append(
+            "MCP_AUTH_TOKEN is not set. Generate one with: "
+            'python -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+    elif len(auth_token) < MIN_TOKEN_LENGTH:
+        problems.append(f"MCP_AUTH_TOKEN must be at least {MIN_TOKEN_LENGTH} characters.")
+    if problems:
+        raise ConfigError("\n".join(problems))
     return Settings(
+        api_key=api_key,
+        auth_token=auth_token,
         base_url=os.environ.get("LYFTA_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
         log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        allowlist_sha256=allowlist,
     )

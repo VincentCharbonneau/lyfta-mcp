@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .auth import hash_key
 from .client import LyftaClient
 from .mappings import decode_exercise_meta
 
@@ -75,7 +74,7 @@ def _norm(name: str) -> str:
 
 
 class ExerciseCatalog:
-    """Name/id resolution with a per-user memory of library entries seen in searches.
+    """Name/id resolution with a memory of library entries seen in searches.
 
     The library has no get-by-id endpoint, so ids are resolved against the user's
     performed exercises first and then against library entries returned by earlier
@@ -84,18 +83,18 @@ class ExerciseCatalog:
 
     def __init__(self, client: LyftaClient) -> None:
         self.client = client
-        self._seen: dict[str, dict[int, CatalogEntry]] = {}
+        self._seen: dict[int, CatalogEntry] = {}
 
-    def _remember(self, api_key: str, entries: list[CatalogEntry]) -> None:
-        seen = self._seen.setdefault(hash_key(api_key), {})
+    def _remember(self, entries: list[CatalogEntry]) -> None:
+        seen = self._seen
         for entry in entries:
             seen[entry.id] = entry
         if len(seen) > 5000:
             for key in list(seen)[:1000]:
                 del seen[key]
 
-    async def performed(self, api_key: str) -> list[CatalogEntry]:
-        raw = await self.client.performed_exercises(api_key)
+    async def performed(self) -> list[CatalogEntry]:
+        raw = await self.client.performed_exercises()
         entries = []
         for item in raw:
             try:
@@ -104,19 +103,19 @@ class ExerciseCatalog:
                 continue
         return entries
 
-    async def search(self, api_key: str, query: str, limit: int = 10) -> list[CatalogEntry]:
-        data = await self.client.search_library(api_key, query, limit=limit)
+    async def search(self, query: str, limit: int = 10) -> list[CatalogEntry]:
+        data = await self.client.search_library(query, limit=limit)
         entries = []
         for item in data.get("results") or []:
             try:
                 entries.append(CatalogEntry.from_api(item, performed=False))
             except (KeyError, ValueError, TypeError):
                 continue
-        self._remember(api_key, entries)
+        self._remember(entries)
         return entries
 
-    async def resolve(self, api_key: str, name_or_id: str | int) -> Resolution:
-        performed = await self.performed(api_key)
+    async def resolve(self, name_or_id: str | int) -> Resolution:
+        performed = await self.performed()
         performed_by_id = {e.id: e for e in performed}
 
         query = str(name_or_id).strip()
@@ -124,7 +123,7 @@ class ExerciseCatalog:
             exercise_id = int(query)
             if exercise_id in performed_by_id:
                 return performed_by_id[exercise_id]
-            seen = self._seen.get(hash_key(api_key), {}).get(exercise_id)
+            seen = self._seen.get(exercise_id)
             if seen is not None:
                 return self._finalize(seen, performed_by_id, query)
             return NotFound(
@@ -138,7 +137,7 @@ class ExerciseCatalog:
             if _norm(entry.name) == wanted:
                 return entry
 
-        library = await self.search(api_key, query, limit=10)
+        library = await self.search(query, limit=10)
         exact = [e for e in library if _norm(e.name) == wanted]
         if len(exact) == 1:
             return self._finalize(exact[0], performed_by_id, query)

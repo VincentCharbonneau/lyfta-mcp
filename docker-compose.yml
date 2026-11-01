@@ -4,10 +4,8 @@ services:
     image: lyfta-mcp:local
     restart: unless-stopped
     ports:
-      - "8000:8000"
-    environment:
-      # Optional: comma-separated SHA-256 hex digests of the Lyfta API keys this server accepts.
-      # Leave empty to accept any key. Compute one with:
-      #   python -c "import hashlib; print(hashlib.sha256(b'YOUR_KEY').hexdigest())"
-      SERVER_ALLOWLIST_KEYS_SHA256: ${SERVER_ALLOWLIST_KEYS_SHA256:-}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Bound to localhost: put a TLS reverse proxy (Caddy, nginx, ...) in front.
+      # Use "8000:8000" only if the proxy runs on another machine.
+      - "127.0.0.1:8000:8000"
+    # LYFTA_API_KEY and MCP_AUTH_TOKEN (required), LOG_LEVEL (optional). See .env.example.
+    env_file: .env

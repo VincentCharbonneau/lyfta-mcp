@@ -1,16 +1,14 @@
-"""Per-request Lyfta API key resolution.
+"""Access control for the MCP endpoint.
 
-stdio: one user, key read from LYFTA_API_KEY at startup.
-http:  every request carries the caller's own key in `Authorization: Bearer <key>`; the
-       middleware stores it in a ContextVar for the duration of that request only.
+The Lyfta API key stays on the server. Clients prove they may use it with a separate
+access token (MCP_AUTH_TOKEN) sent as `Authorization: Bearer <token>`.
 """
 
 from __future__ import annotations
 
-import hashlib
+import hmac
 import json
 from collections.abc import Awaitable, Callable, Iterable, MutableMapping
-from contextvars import ContextVar
 from typing import Any
 
 Scope = MutableMapping[str, Any]
@@ -18,30 +16,6 @@ Message = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
 ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
-
-_request_key: ContextVar[str | None] = ContextVar("lyfta_api_key", default=None)
-_stdio_key: str | None = None
-
-
-class AuthError(Exception):
-    pass
-
-
-def hash_key(api_key: str) -> str:
-    return hashlib.sha256(api_key.encode()).hexdigest()
-
-
-def configure_stdio(api_key: str) -> None:
-    """Set the single-user key. Only called in stdio mode."""
-    global _stdio_key
-    _stdio_key = api_key
-
-
-def current_api_key() -> str:
-    key = _request_key.get() or _stdio_key
-    if not key:
-        raise AuthError("No Lyfta API key for this request.")
-    return key
 
 
 async def _send_json(
@@ -60,19 +34,21 @@ async def _send_json(
     await send({"type": "http.response.body", "body": payload})
 
 
-class BearerKeyMiddleware:
-    """ASGI middleware that reads the caller's Lyfta key from the Authorization header."""
+class BearerTokenMiddleware:
+    """ASGI middleware that only lets requests carrying the server's access token through."""
 
     def __init__(
         self,
         app: ASGIApp,
         *,
-        allowlist_sha256: frozenset[str] = frozenset(),
+        token: str,
         exempt_paths: Iterable[str] = ("/health",),
         exempt_prefixes: Iterable[str] = ("/.well-known/",),
     ) -> None:
+        if not token:
+            raise ValueError("an access token is required")
         self.app = app
-        self.allowlist = allowlist_sha256
+        self._token = token.encode()
         self.exempt_paths = frozenset(exempt_paths)
         self.exempt_prefixes = tuple(exempt_prefixes)
 
@@ -85,31 +61,19 @@ class BearerKeyMiddleware:
             await self.app(scope, receive, send)
             return
 
-        key = _bearer_from_scope(scope)
-        if not key:
+        presented = _bearer_from_scope(scope)
+        if presented is None or not hmac.compare_digest(presented.encode(), self._token):
             await _send_json(
                 send,
                 401,
                 {
-                    "error": "missing_api_key",
-                    "message": "Send your Lyfta API key as 'Authorization: Bearer <key>'.",
+                    "error": "unauthorized",
+                    "message": "Send the server's access token as 'Authorization: Bearer <token>'.",
                 },
                 [(b"www-authenticate", b'Bearer realm="lyfta-mcp"')],
             )
             return
-        if self.allowlist and hash_key(key) not in self.allowlist:
-            await _send_json(
-                send,
-                403,
-                {"error": "key_not_allowed", "message": "This server does not accept that key."},
-            )
-            return
-
-        token = _request_key.set(key)
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            _request_key.reset(token)
+        await self.app(scope, receive, send)
 
 
 def _bearer_from_scope(scope: Scope) -> str | None:

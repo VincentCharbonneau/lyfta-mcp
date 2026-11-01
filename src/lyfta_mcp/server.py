@@ -17,7 +17,6 @@ from starlette.responses import JSONResponse
 
 from . import __version__
 from .analytics import lift_trend, progress_points, training_summary
-from .auth import AuthError, current_api_key
 from .catalog import Ambiguous, CatalogEntry, ExerciseCatalog, NotFound, Resolution
 from .client import TTL_CATALOG, LyftaClient, LyftaError
 from .config import Settings
@@ -131,13 +130,11 @@ def iso(d: date | None) -> str | None:
 
 @contextmanager
 def lyfta_errors() -> Iterator[None]:
-    """Turn API and auth failures into tool errors Claude can read."""
+    """Turn Lyfta API failures into tool errors Claude can read."""
     try:
         yield
     except LyftaError as exc:
         raise ToolError(exc.message) from exc
-    except AuthError as exc:
-        raise ToolError(str(exc)) from exc
 
 
 def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPServer:
@@ -156,12 +153,11 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
 
     # --- helpers --------------------------------------------------------------------
 
-    async def weight_unit(key: str) -> str:
-        performed = await client.performed_exercises(key)
+    async def weight_unit() -> str:
+        performed = await client.performed_exercises()
         if not performed:
             return "unknown"
         data = await client.get(
-            key,
             "/exercises/progress",
             {"exercise_id": int(performed[0]["id"]), "duration": 30},
             ttl=TTL_CATALOG,
@@ -169,13 +165,13 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         return str(data.get("weight_unit") or "unknown")
 
     async def fetch_workouts(
-        key: str, start: date | None, end: date | None
+        start: date | None, end: date | None
     ) -> tuple[list[dict[str, Any]], bool]:
         workouts: list[dict[str, Any]] = []
         page = 1
         while len(workouts) < WORKOUT_FETCH_CAP:
             data = await client.workouts(
-                key, limit=100, page=page, from_date=iso(start), to_date=iso(end)
+                limit=100, page=page, from_date=iso(start), to_date=iso(end)
             )
             batch = data.get("workouts") or []
             workouts.extend(batch)
@@ -201,11 +197,10 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         PR records). Use for detailed session history; for many sessions at once prefer
         get_workout_summaries or get_training_summary."""
         with lyfta_errors():
-            key = current_api_key()
             data = await client.workouts(
-                key, limit=limit, page=page, from_date=iso(start_date), to_date=iso(end_date)
+                limit=limit, page=page, from_date=iso(start_date), to_date=iso(end_date)
             )
-            unit = await weight_unit(key)
+            unit = await weight_unit()
         return dump(
             prune(
                 {
@@ -226,9 +221,8 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         """Workout headers only (id, date, title, duration, volume), newest first. Cheap way to
         see training frequency over a long period."""
         with lyfta_errors():
-            key = current_api_key()
-            data = await client.workout_summaries(key, limit=limit, page=page)
-            unit = await weight_unit(key)
+            data = await client.workout_summaries(limit=limit, page=page)
+            unit = await weight_unit()
         rows = [
             {
                 "id": w.get("id"),
@@ -257,8 +251,7 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         muscles. These are the exercises they actually do; prefer them when building
         programs."""
         with lyfta_errors():
-            key = current_api_key()
-            entries = await catalog.performed(key)
+            entries = await catalog.performed()
         rows = []
         for e in sorted(entries, key=lambda e: e.name.casefold()):
             card = e.card()
@@ -276,9 +269,8 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         """Search the full Lyfta exercise catalog by name. Returned ids can be passed to
         create_workout. Entries marked performed_before are ones the user already does."""
         with lyfta_errors():
-            key = current_api_key()
-            results = await catalog.search(key, query, limit=limit)
-            performed_ids = {e.id for e in await catalog.performed(key)}
+            results = await catalog.search(query, limit=limit)
+            performed_ids = {e.id for e in await catalog.performed()}
         cards = []
         for e in results:
             card = e.card()
@@ -297,11 +289,10 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         """Best set per training day for one exercise: best weight, reps, volume and estimated
         1RM (e1rm). Only exercises the user has performed have progress."""
         with lyfta_errors():
-            key = current_api_key()
-            res = await catalog.resolve(key, exercise)
+            res = await catalog.resolve(exercise)
             if not isinstance(res, CatalogEntry):
                 return dump(resolution_error(res))
-            data = await client.exercise_progress(key, res.id, days)
+            data = await client.exercise_progress(res.id, days)
         return dump(
             {
                 "exercise": res.name,
@@ -316,7 +307,7 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
     async def list_programs() -> str:
         """The user's programs (Lyfta collections) with id, title and number of workouts."""
         with lyfta_errors():
-            items = await client.all_collections(current_api_key())
+            items = await client.all_collections()
         rows = [
             prune(
                 {
@@ -340,11 +331,10 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         """One program with its workout templates. full=false gives template cards
         (id, title, exercise count); full=true includes all exercises and target sets."""
         with lyfta_errors():
-            key = current_api_key()
-            data = await client.collection(key, program_id, full=full)
+            data = await client.collection(program_id, full=full)
             if not data:
                 raise ToolError(f"Program {program_id} not found. Use list_programs.")
-            unit = await weight_unit(key) if full else None
+            unit = await weight_unit() if full else None
         workouts = []
         for w in data.get("workouts") or []:
             if full and w.get("exercises") is not None:
@@ -379,7 +369,7 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
     ) -> str:
         """Saved workout templates as cards: id, title, exercise count and parent program."""
         with lyfta_errors():
-            data = await client.templates(current_api_key(), limit=limit, page=page)
+            data = await client.templates(limit=limit, page=page)
         rows = [
             prune(
                 {
@@ -410,11 +400,10 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
     ) -> str:
         """One workout template with every exercise and its target sets."""
         with lyfta_errors():
-            key = current_api_key()
-            data = await client.template(key, template_id)
+            data = await client.template(template_id)
             if not data:
                 raise ToolError(f"Template {template_id} not found.")
-            unit = await weight_unit(key)
+            unit = await weight_unit()
         return dump(prune({"weight_unit": unit, **compact_template(data)}))
 
     @mcp.tool(annotations=READ_ONLY)
@@ -431,7 +420,6 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         server cannot schedule workouts)."""
         with lyfta_errors():
             data = await client.schedule(
-                current_api_key(),
                 from_date=iso(start_date),
                 to_date=iso(end_date),
                 include_completed=include_completed,
@@ -466,10 +454,9 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         if end_date < start_date:
             raise ToolError("end_date must be on or after start_date.")
         with lyfta_errors():
-            key = current_api_key()
-            workouts, truncated = await fetch_workouts(key, start_date, end_date)
-            meta = {e.id: e for e in await catalog.performed(key)}
-            unit = await weight_unit(key)
+            workouts, truncated = await fetch_workouts(start_date, end_date)
+            meta = {e.id: e for e in await catalog.performed()}
+            unit = await weight_unit()
         summary = training_summary(workouts, meta)
         result: dict[str, Any] = {
             "start_date": start_date.isoformat(),
@@ -499,15 +486,14 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         """Strength trend per lift over the last `days`: current e1RM, best e1RM, change over
         the period, last top set, and weeks since the last PR."""
         with lyfta_errors():
-            key = current_api_key()
-            unit = await weight_unit(key)
+            unit = await weight_unit()
             lifts = []
             for name in exercises:
-                res = await catalog.resolve(key, name)
+                res = await catalog.resolve(name)
                 if not isinstance(res, CatalogEntry):
                     lifts.append(resolution_error(res))
                     continue
-                data = await client.exercise_progress(key, res.id, days)
+                data = await client.exercise_progress(res.id, days)
                 lifts.append(
                     {"exercise": res.name, **lift_trend(progress_points(data), date.today())}
                 )
@@ -535,10 +521,9 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         if not title:
             raise ToolError("title must not be blank.")
         with lyfta_errors():
-            key = current_api_key()
             existing = [
                 c
-                for c in await client.all_collections(key)
+                for c in await client.all_collections()
                 if str(c.get("title") or "").strip().casefold() == title.casefold()
             ]
             warning = (
@@ -558,7 +543,7 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
                         }
                     )
                 )
-            created = await client.create_collection(key, title, description, goal)
+            created = await client.create_collection(title, description, goal)
         return dump(
             prune(
                 {
@@ -601,9 +586,8 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
         if not title:
             raise ToolError("title must not be blank.")
         with lyfta_errors():
-            key = current_api_key()
             try:
-                program = await client.collection(key, program_id)
+                program = await client.collection(program_id)
             except LyftaError as exc:
                 if exc.status in (400, 404) or "not found" in exc.message.lower():
                     raise ToolError(f"Program {program_id} not found. Use list_programs.") from exc
@@ -614,7 +598,7 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
             resolved: list[tuple[ExerciseInput, CatalogEntry]] = []
             problems: list[dict[str, Any]] = []
             for item in exercises:
-                res: Resolution = await catalog.resolve(key, item.exercise)
+                res: Resolution = await catalog.resolve(item.exercise)
                 if isinstance(res, CatalogEntry):
                     resolved.append((item, res))
                 else:
@@ -648,7 +632,7 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
                     }
                 )
 
-            unit = await weight_unit(key)
+            unit = await weight_unit()
             workout = build_workout_payload(title, description, note, resolved)
             warnings = _set_warnings(resolved)
             if not confirm:
@@ -671,9 +655,9 @@ def create_server(settings: Settings, client: LyftaClient | None = None) -> MCPS
                     )
                 )
 
-            created = await client.create_template(key, program_id, workout)
+            created = await client.create_template(program_id, workout)
             template_id = (created or {}).get("id")
-            fetched = await client.template(key, int(template_id)) if template_id else None
+            fetched = await client.template(int(template_id)) if template_id else None
         return dump(
             prune(
                 {
