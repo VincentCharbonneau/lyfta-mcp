@@ -55,22 +55,22 @@ Go to [my.lyfta.app/community/api](https://my.lyfta.app/community/api), click **
 
 ```bash
 git clone https://github.com/VincentCharbonneau/lyfta-mcp && cd lyfta-mcp
-cp .env.example .env
-python -c "import secrets; print(secrets.token_urlsafe(32))"   # your access token
+uv run lyfta-mcp
 ```
 
-Edit `.env`:
+On the first run there is no `.env` yet, so the server creates one with a freshly generated access token (`MCP_AUTH_TOKEN`) and exits, asking for your Lyfta key. Open `.env` and fill it in:
 
 ```
 LYFTA_API_KEY=<your Lyfta key>
-MCP_AUTH_TOKEN=<the token you just generated>
 ```
+
+You can also create it by hand: `cp .env.example .env`, then set both values (generate a token with `python -c "import secrets; print(secrets.token_urlsafe(32))"`). An existing `.env` is never overwritten.
 
 `.env` is ignored by git and Docker builds, so neither secret is ever committed or baked into an image. `.env.example` is the committed template; keep it empty. The server refuses to start if either value is missing or the token is shorter than 24 characters.
 
 ### 3. Run it
 
-With Docker:
+With Docker (Compose reads the `.env` from step 2, so create it first):
 
 ```bash
 docker compose up -d

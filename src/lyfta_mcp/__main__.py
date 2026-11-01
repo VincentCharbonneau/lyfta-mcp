@@ -12,7 +12,14 @@ import sys
 
 from .auth import BearerTokenMiddleware
 from .client import LyftaClient
-from .config import ConfigError, Settings, load_dotenv, load_settings
+from .config import (
+    ConfigError,
+    Settings,
+    create_env_file,
+    default_env_path,
+    load_dotenv,
+    load_settings,
+)
 from .server import create_server
 
 
@@ -35,10 +42,25 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     args = parser.parse_args(argv)
 
-    load_dotenv()
+    env_file = load_dotenv()
     try:
         settings = load_settings()
     except ConfigError as exc:
+        if env_file is None and not os.environ.get("LYFTA_API_KEY"):
+            # First run: write a .env with a fresh access token for the user to complete.
+            try:
+                created = create_env_file(default_env_path())
+            except OSError as write_error:
+                print(f"lyfta-mcp: configuration error\n{exc}", file=sys.stderr)
+                print(f"(could not create a .env file: {write_error})", file=sys.stderr)
+            else:
+                print(
+                    f"lyfta-mcp: created {created} with a new access token.\n"
+                    "Put your Lyfta API key in it (LYFTA_API_KEY=...), from "
+                    "https://my.lyfta.app/community/api, then start the server again.",
+                    file=sys.stderr,
+                )
+            sys.exit(2)
         print(f"lyfta-mcp: configuration error\n{exc}", file=sys.stderr)
         sys.exit(2)
 

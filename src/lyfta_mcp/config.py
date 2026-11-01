@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,6 +61,33 @@ def load_dotenv(paths: list[Path] | None = None) -> Path | None:
                     os.environ[key] = value
             return path
     return None
+
+
+ENV_TEMPLATE = """\
+# Server secrets. This file is ignored by git and never pushed.
+
+# Your Lyfta API key (https://my.lyfta.app/community/api). It never leaves the server.
+LYFTA_API_KEY=
+
+# Access token clients send as "Authorization: Bearer <token>" (generated for you).
+MCP_AUTH_TOKEN={token}
+
+LOG_LEVEL=INFO
+"""
+
+
+def default_env_path() -> Path:
+    """The repository's .env when running from a clone, otherwise ./.env."""
+    if (REPO_ROOT / "pyproject.toml").is_file():
+        return REPO_ROOT / ".env"
+    return Path.cwd() / ".env"
+
+
+def create_env_file(path: Path) -> Path:
+    """Write a starter .env with a freshly generated access token. Never overwrites."""
+    with path.open("x", encoding="utf-8") as f:
+        f.write(ENV_TEMPLATE.format(token=secrets.token_urlsafe(32)))
+    return path
 
 
 def load_settings() -> Settings:
