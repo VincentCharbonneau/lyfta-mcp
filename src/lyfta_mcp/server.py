@@ -20,7 +20,7 @@ from .analytics import lift_trend, progress_points, training_summary
 from .catalog import Ambiguous, CatalogEntry, ExerciseCatalog, NotFound, Resolution
 from .client import TTL_CATALOG, LyftaClient, LyftaError
 from .config import Settings
-from .models import ExerciseInput, build_workout_payload, preview_lines
+from .models import ExerciseInput, build_workout_payload, preview_lines, rest_from_lyfta
 
 WORKOUT_FETCH_CAP = 500
 
@@ -76,7 +76,7 @@ def compact_exercise(ex: dict[str, Any]) -> dict[str, Any]:
     return {
         "exercise_id": ex.get("exercise_id"),
         "name": ex.get("excercise_name") or ex.get("exercise_name"),
-        "rest_seconds": ex.get("exercise_rest_time") or None,
+        "rest_seconds": rest_from_lyfta(ex.get("exercise_rest_time")) or None,
         "note": ex.get("exercise_note"),
         "superset_group": ex.get("exercise_superset_id") or None,
         "rep_range": True if ex.get("is_rep_range_active") in (True, "1", 1, "true") else None,

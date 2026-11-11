@@ -48,7 +48,12 @@ class ExerciseInput(BaseModel):
         "returned by list_my_exercises / search_exercise_library."
     )
     sets: list[SetInput] = Field(min_length=1, max_length=50)
-    rest_seconds: int = Field(default=0, ge=0, le=3600, description="Rest between sets.")
+    rest_seconds: int = Field(
+        default=0,
+        ge=0,
+        le=3600,
+        description="Rest between sets, in seconds (rounded to the nearest 5 s, the app's step).",
+    )
     note: str = Field(default="", max_length=500, description="Per-exercise note.")
     superset_group: int = Field(
         default=0,
@@ -65,6 +70,23 @@ def num(value: float | int) -> str:
     if as_float.is_integer():
         return str(int(as_float))
     return f"{as_float:g}"
+
+
+# Lyfta stores `exercise_rest_time` in 5-second steps, not seconds: 24 means 2:00.
+REST_UNIT_SECONDS = 5
+
+
+def rest_to_lyfta(seconds: int) -> int:
+    """Seconds -> Lyfta rest units, rounded to the nearest step (halves round up)."""
+    return (seconds + REST_UNIT_SECONDS // 2) // REST_UNIT_SECONDS
+
+
+def rest_from_lyfta(value: Any) -> int:
+    """Lyfta rest units (int or numeric string) -> seconds. Invalid or empty -> 0."""
+    try:
+        return int(float(value)) * REST_UNIT_SECONDS
+    except (TypeError, ValueError):
+        return 0
 
 
 def build_exercise_payload(item: ExerciseInput, entry: CatalogEntry) -> dict[str, Any]:
@@ -93,7 +115,7 @@ def build_exercise_payload(item: ExerciseInput, entry: CatalogEntry) -> dict[str
         "exercise_type": entry.exercise_type or "",
         "exercise_image": entry.image_name,
         "exercise_note": item.note,
-        "exercise_rest_time": item.rest_seconds,
+        "exercise_rest_time": rest_to_lyfta(item.rest_seconds),
         "exercise_superset_id": item.superset_group,
         "is_rep_range_active": range_active,
         "sets": sets,
@@ -149,8 +171,9 @@ def preview_lines(workout: dict[str, Any], unit: str) -> list[str]:
         extras = []
         if ex.get("exercise_superset_id"):
             extras.append(f"superset {ex['exercise_superset_id']}")
-        if ex.get("exercise_rest_time"):
-            extras.append(f"rest {_fmt_rest(int(ex['exercise_rest_time']))}")
+        rest = rest_from_lyfta(ex.get("exercise_rest_time"))
+        if rest:
+            extras.append(f"rest {_fmt_rest(rest)}")
         if extras:
             header += f" ({', '.join(extras)})"
         lines.append(header)
