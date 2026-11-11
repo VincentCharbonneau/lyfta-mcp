@@ -4,7 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from lyfta_mcp.catalog import CatalogEntry
-from lyfta_mcp.models import ExerciseInput, build_workout_payload, num, preview_lines
+from lyfta_mcp.models import (
+    ExerciseInput,
+    build_workout_payload,
+    num,
+    preview_lines,
+    rest_from_lyfta,
+    rest_to_lyfta,
+)
 
 SQUAT = CatalogEntry(1, "Barbell Squat", "weight_reps", "https://img/squat.png")
 CURL = CatalogEntry(4, "Dumbbell Curl", "weight_reps", "https://img/curl.png")
@@ -33,7 +40,7 @@ def test_payload_strings_and_catalog_fields() -> None:
     assert ex["excercise_name"] == "Barbell Squat"
     assert ex["exercise_type"] == "weight_reps"
     assert ex["exercise_image"] == "https://img/squat.png"
-    assert ex["exercise_rest_time"] == 180
+    assert ex["exercise_rest_time"] == 36  # 5-second units: 36 * 5 s = 3:00
     assert ex["exercise_note"] == "belt on top sets"
     assert ex["exercise_superset_id"] == 0
     assert ex["is_rep_range_active"] is False
@@ -109,3 +116,22 @@ def test_preview_lines() -> None:
         "   set 1: 5 reps @ 140 kg, RIR 2",
         "   set 2: 8-10 reps @ 110 kg",
     ]
+
+
+@pytest.mark.parametrize(
+    ("seconds", "units"), [(0, 0), (90, 18), (120, 24), (180, 36), (92, 18), (93, 19), (3600, 720)]
+)
+def test_rest_to_lyfta_uses_5_second_units(seconds: int, units: int) -> None:
+    assert rest_to_lyfta(seconds) == units
+
+
+@pytest.mark.parametrize(("value", "seconds"), [(24, 120), ("48", 240), (None, 0), ("", 0), (0, 0)])
+def test_rest_from_lyfta(value: object, seconds: int) -> None:
+    assert rest_from_lyfta(value) == seconds
+
+
+def test_compact_exercise_reports_rest_in_seconds() -> None:
+    from lyfta_mcp.server import compact_exercise
+
+    assert compact_exercise({"exercise_rest_time": "24", "sets": []})["rest_seconds"] == 120
+    assert compact_exercise({"exercise_rest_time": 0, "sets": []})["rest_seconds"] is None

@@ -103,7 +103,7 @@ def workout_exercise(ex: dict[str, Any], sets: list[dict[str, Any]]) -> dict[str
         "excercise_name": ex["name"],
         "exercise_type": ex["exercise_type"],
         "exercise_image": ex["image_name"],
-        "exercise_rest_time": 120,
+        "exercise_rest_time": 24,  # 5-second units: 2:00
         "sets": sets,
     }
 
